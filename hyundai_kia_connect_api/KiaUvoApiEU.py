@@ -1433,7 +1433,18 @@ class KiaUvoApiEU(ApiImplType1):
             if options.rear_right_seat is None:
                 options.rear_right_seat = 0
 
-            hex_set_temp = get_hex_temp_into_index(options.set_temp)
+            # Correct logic: Find index in range, then convert index to hex string
+            # self.temperature_range is inherited and populated in __init__ of ApiImplType1 or overridden.
+            # For EU it seems to be [x * 0.5 for x in range(28, 60)] typically.
+            try:
+                temp_index = self.temperature_range.index(options.set_temp)
+            except ValueError:
+                # Fallback or clamp if temp not found exactly? 
+                # For now let's assume valid input or clamp to nearest.
+                # If exact match fails, we might need a smarter lookup, but standard UI usually sends valid steps.
+                temp_index = min(range(len(self.temperature_range)), key=lambda i: abs(self.temperature_range[i] - options.set_temp))
+
+            hex_set_temp = get_index_into_hex_temp(temp_index)
             # Adjust index logic if needed, but using existing util for now.
             # CA uses get_index_into_hex_temp(self.temperature_range_c_new.index(options.set_temp))
             # EU uses self.temperature_range = [x * 0.5 for x in range(28, 60)]
