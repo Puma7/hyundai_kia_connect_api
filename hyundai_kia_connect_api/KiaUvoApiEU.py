@@ -1525,6 +1525,8 @@ class KiaUvoApiEU(ApiImplType1):
                 token, vehicle.ccu_ccs2_protocol_support
             )
             headers["vehicleId"] = vehicle.id
+            # Try adding AuthorizationCCSP header - the ccs2 endpoint might check for this
+            headers["AuthorizationCCSP"] = token.access_token
             
             # VERBOSE LOGGING FOR DEBUGGING
             _LOGGER.warning(f"{DOMAIN} - ========== EV9/IONIQ9 CLIMATE DEBUG ==========")
