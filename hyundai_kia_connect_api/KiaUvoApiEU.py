@@ -1464,6 +1464,7 @@ class KiaUvoApiEU(ApiImplType1):
             
             payload = {
                 "remoteControl": climate_settings,
+                "pin": token.pin,
             }
             payload["remoteControl"].update(
                 {
