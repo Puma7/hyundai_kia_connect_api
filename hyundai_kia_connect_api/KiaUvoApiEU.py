@@ -1407,12 +1407,9 @@ class KiaUvoApiEU(ApiImplType1):
             or vehicle.name == "EV9"
             or vehicle.model == "EV9"
         ):
-            url = (
-                self.SPA_API_URL_V2
-                + "vehicles/"
-                + vehicle.id
-                + "/ccs2/control/temperature"
-            )
+            # Use evc/rfon endpoint likely required for EV9/IONIQ9 with remoteControl payload
+            # This endpoint typically doesn't take vehicle ID in path but in header
+            url = self.SPA_API_URL_V2 + "evc/rfon"
             
             # Defaults
             if options.set_temp is None:
@@ -1485,6 +1482,8 @@ class KiaUvoApiEU(ApiImplType1):
             headers = self._get_authenticated_headers(
                 token, vehicle.ccu_ccs2_protocol_support
             )
+            # Add vehicleId to header as it is required for generic endpoints like evc/rfon
+            headers["vehicleId"] = vehicle.id
             
             _LOGGER.debug(f"{DOMAIN} - Start Climate Action Request (EV9/IONIQ9): {payload}")
             response = requests.post(
