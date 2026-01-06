@@ -1503,16 +1503,11 @@ class KiaUvoApiEU(ApiImplType1):
                 }
             )
 
-            # NOTE: Bypassing _get_control_headers because _get_control_token fails for these cars.
-            # Using authenticated headers. We might need to inject PIN/pAuth if the server requires it,
-            # but usually remoteControl payload implies a different auth flow or embedded PIN.
-            # If this fails with 403/401, we might need to revisit Auth.
-            headers = self._get_authenticated_headers(
-                token, vehicle.ccu_ccs2_protocol_support
-            )
-            # Add vehicleId to header as it is required for generic endpoints like evc/rfon
+            # Try using standard control headers which include the control token
+            # The original bypass was because _get_control_token supposedly failed for these cars,
+            # but let's try it anyway to get a proper error message.
+            headers = self._get_control_headers(token, vehicle)
             headers["vehicleId"] = vehicle.id
-            headers["pAuth"] = self._get_pin_token(token, vehicle)
             
             _LOGGER.debug(f"{DOMAIN} - Start Climate Action Request (EV9/IONIQ9): {payload}")
             response = requests.post(
