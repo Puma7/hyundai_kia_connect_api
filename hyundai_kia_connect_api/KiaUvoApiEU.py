@@ -11,7 +11,9 @@ import re
 import typing as ty
 from urllib.parse import parse_qs, urlparse
 
+import socket
 import requests
+import requests.packages.urllib3.util.connection as urllib3_cn
 from bs4 import BeautifulSoup
 from zoneinfo import ZoneInfo
 
@@ -52,8 +54,13 @@ from .utils import (
 
 _LOGGER = logging.getLogger(__name__)
 
+def allowed_gai_family():
+    return socket.AF_INET
+
+urllib3_cn.allowed_gai_family = allowed_gai_family
+
 USER_AGENT_OK_HTTP: str = "okhttp/3.12.0"
-USER_AGENT_MOZILLA: str = "Mozilla/5.0 (Linux; Android 4.1.1; Galaxy Nexus Build/JRO03C) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.166 Mobile Safari/535.19"  # noqa
+USER_AGENT_MOZILLA: str = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
 ACCEPT_HEADER_ALL: str = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"  # noqa
 
 SUPPORTED_LANGUAGES_LIST = [
@@ -1391,3 +1398,90 @@ class KiaUvoApiEU(ApiImplType1):
         token_type = response["token_type"]
         refresh_token = token_type + " " + response["access_token"]
         return token_type, refresh_token
+    def start_climate(
+        self, token: Token, vehicle: Vehicle, options
+    ) -> str:
+        if (
+            vehicle.model == "IONIQ 9"
+            or vehicle.name == "EV9"
+            or vehicle.model == "EV9"
+        ):
+            url = (
+                self.SPA_API_URL_V2
+                + "vehicles/"
+                + vehicle.id
+                + "/ccs2/control/temperature"
+            )
+            
+            # Defaults
+            if options.set_temp is None:
+                options.set_temp = 21
+            if options.duration is None:
+                options.duration = 5
+            if options.defrost is None:
+                options.defrost = False
+            if options.climate is None:
+                options.climate = True
+            if options.heating is None:
+                options.heating = 0
+            if options.front_left_seat is None:
+                options.front_left_seat = 0
+            if options.front_right_seat is None:
+                options.front_right_seat = 0
+            if options.rear_left_seat is None:
+                options.rear_left_seat = 0
+            if options.rear_right_seat is None:
+                options.rear_right_seat = 0
+
+            hex_set_temp = get_hex_temp_into_index(options.set_temp)
+            # Adjust index logic if needed, but using existing util for now.
+            # CA uses get_index_into_hex_temp(self.temperature_range_c_new.index(options.set_temp))
+            # EU uses self.temperature_range = [x * 0.5 for x in range(28, 60)]
+            # We will stick to EU temperature range logic unless proven otherwise.
+
+            climate_settings = {
+                "airCtrl": int(options.climate),
+                "defrost": options.defrost,
+                "heating1": options.heating,
+                "airTemp": {
+                    "value": hex_set_temp,
+                    "unit": 0,
+                    "hvacTempType": 1,
+                },
+            }
+            
+            payload = {
+                "remoteControl": climate_settings,
+            }
+            payload["remoteControl"].update(
+                {
+                    "igniOnDuration": options.duration,
+                    "seatHeaterVentCMD": {
+                        "drvSeatOptCmd": options.front_left_seat,
+                        "astSeatOptCmd": options.front_right_seat,
+                        "rlSeatOptCmd": options.rear_left_seat,
+                        "rrSeatOptCmd": options.rear_right_seat,
+                    },
+                }
+            )
+
+            # NOTE: Bypassing _get_control_headers because _get_control_token fails for these cars.
+            # Using authenticated headers. We might need to inject PIN/pAuth if the server requires it,
+            # but usually remoteControl payload implies a different auth flow or embedded PIN.
+            # If this fails with 403/401, we might need to revisit Auth.
+            headers = self._get_authenticated_headers(
+                token, vehicle.ccu_ccs2_protocol_support
+            )
+            
+            _LOGGER.debug(f"{DOMAIN} - Start Climate Action Request (EV9/IONIQ9): {payload}")
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+            ).json()
+            _LOGGER.debug(f"{DOMAIN} - Start Climate Action Response: {response}")
+            _check_response_for_errors(response)
+            token.device_id = self._get_device_id(self._get_stamp())
+            return response["msgId"]
+
+        return super().start_climate(token, vehicle, options)
