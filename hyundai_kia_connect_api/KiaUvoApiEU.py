@@ -1424,6 +1424,45 @@ class KiaUvoApiEU(ApiImplType1):
         # Proceeding without pAuth might fail, or raise error.
         raise APIError("pAuth not found in vrfypin response")
 
+    def _get_control_token(self, token: Token):
+        """Override to add verbose logging for debugging EV9/IONIQ9 issues."""
+        import math
+        
+        url = self.USER_API_URL + "pin?token="
+        headers = {
+            "Authorization": token.access_token,
+            "Content-type": "application/json",
+            "Host": self.BASE_URL,
+            "Accept-Encoding": "gzip",
+            "User-Agent": USER_AGENT_MOZILLA,
+        }
+        data = {"deviceId": token.device_id, "pin": token.pin}
+        
+        _LOGGER.warning(f"{DOMAIN} - ========== CONTROL TOKEN DEBUG ==========")
+        _LOGGER.warning(f"{DOMAIN} - URL: {url}")
+        _LOGGER.warning(f"{DOMAIN} - Headers: {headers}")
+        _LOGGER.warning(f"{DOMAIN} - Payload: {data}")
+        
+        raw_response = requests.put(url, json=data, headers=headers)
+        
+        _LOGGER.warning(f"{DOMAIN} - Response Status: {raw_response.status_code}")
+        _LOGGER.warning(f"{DOMAIN} - Response Headers: {dict(raw_response.headers)}")
+        _LOGGER.warning(f"{DOMAIN} - Response Text (raw): {raw_response.text}")
+        _LOGGER.warning(f"{DOMAIN} - ========== END CONTROL TOKEN DEBUG ==========")
+        
+        response = raw_response.json()
+        
+        if "controlToken" not in response:
+            _LOGGER.error(f"{DOMAIN} - controlToken NOT found in response! Full response: {response}")
+            raise APIError(f"controlToken not in response: {response}")
+        
+        control_token = "Bearer " + response["controlToken"]
+        control_token_expire_at = math.floor(
+            dt.datetime.now().timestamp() + response["expiresTime"]
+        )
+        return control_token, control_token_expire_at
+
+
     def start_climate(
         self, token: Token, vehicle: Vehicle, options
     ) -> str:
@@ -1487,13 +1526,23 @@ class KiaUvoApiEU(ApiImplType1):
             )
             headers["vehicleId"] = vehicle.id
             
-            _LOGGER.debug(f"{DOMAIN} - Start Climate Action Request (EV9/IONIQ9): {payload}")
-            response = requests.post(
+            # VERBOSE LOGGING FOR DEBUGGING
+            _LOGGER.warning(f"{DOMAIN} - ========== EV9/IONIQ9 CLIMATE DEBUG ==========")
+            _LOGGER.warning(f"{DOMAIN} - URL: {url}")
+            _LOGGER.warning(f"{DOMAIN} - Headers: {headers}")
+            _LOGGER.warning(f"{DOMAIN} - Payload: {payload}")
+            
+            raw_response = requests.post(
                 url,
                 json=payload,
                 headers=headers,
-            ).json()
-            _LOGGER.debug(f"{DOMAIN} - Start Climate Action Response: {response}")
+            )
+            _LOGGER.warning(f"{DOMAIN} - Response Status: {raw_response.status_code}")
+            _LOGGER.warning(f"{DOMAIN} - Response Headers: {dict(raw_response.headers)}")
+            _LOGGER.warning(f"{DOMAIN} - Response Text (raw): {raw_response.text}")
+            _LOGGER.warning(f"{DOMAIN} - ========== END DEBUG ==========")
+            
+            response = raw_response.json()
             _check_response_for_errors(response)
             token.device_id = self._get_device_id(self._get_stamp())
             return response["msgId"]
