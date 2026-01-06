@@ -1399,6 +1399,30 @@ class KiaUvoApiEU(ApiImplType1):
         token_type = response["token_type"]
         refresh_token = token_type + " " + response["access_token"]
         return token_type, refresh_token
+
+    def _get_pin_token(self, token: Token, vehicle: Vehicle) -> str:
+        url = self.SPA_API_URL_V2 + "vrfypin"
+        headers = self._get_authenticated_headers(
+            token, vehicle.ccu_ccs2_protocol_support
+        )
+        headers["vehicleId"] = vehicle.id
+        
+        payload = {"pin": token.pin}
+        
+        _LOGGER.debug(f"{DOMAIN} - Requesting pAuth for EV9/IONIQ9")
+        response = requests.post(
+            url, headers=headers, json=payload
+        ).json()
+        _LOGGER.debug(f"{DOMAIN} - Received Pin validation response: {response}")
+        _check_response_for_errors(response)
+        
+        if "result" in response and "pAuth" in response["result"]:
+             return response["result"]["pAuth"]
+        
+        # If we get here, pAuth is missing but no error code was raised by _check_response_for_errors
+        # Proceeding without pAuth might fail, or raise error.
+        raise APIError("pAuth not found in vrfypin response")
+
     def start_climate(
         self, token: Token, vehicle: Vehicle, options
     ) -> str:
@@ -1407,9 +1431,12 @@ class KiaUvoApiEU(ApiImplType1):
             or vehicle.name == "EV9"
             or vehicle.model == "EV9"
         ):
-            # Use evc/rfon endpoint likely required for EV9/IONIQ9 with remoteControl payload
-            # This endpoint typically doesn't take vehicle ID in path but in header
-            url = self.SPA_API_URL_V2 + "evc/rfon"
+            url = (
+                self.SPA_API_URL_V2
+                + "vehicles/"
+                + vehicle.id
+                + "/ccs2/control/temperature"
+            )
             
             # Defaults
             if options.set_temp is None:
@@ -1484,6 +1511,7 @@ class KiaUvoApiEU(ApiImplType1):
             )
             # Add vehicleId to header as it is required for generic endpoints like evc/rfon
             headers["vehicleId"] = vehicle.id
+            headers["pAuth"] = self._get_pin_token(token, vehicle)
             
             _LOGGER.debug(f"{DOMAIN} - Start Climate Action Request (EV9/IONIQ9): {payload}")
             response = requests.post(
