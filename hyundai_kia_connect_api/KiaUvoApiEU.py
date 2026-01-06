@@ -1458,55 +1458,33 @@ class KiaUvoApiEU(ApiImplType1):
                 options.rear_left_seat = 0
             if options.rear_right_seat is None:
                 options.rear_right_seat = 0
+            if options.steering_wheel is None:
+                options.steering_wheel = 0
 
-            # Correct logic: Find index in range, then convert index to hex string
-            # self.temperature_range is inherited and populated in __init__ of ApiImplType1 or overridden.
-            # For EU it seems to be [x * 0.5 for x in range(28, 60)] typically.
-            try:
-                temp_index = self.temperature_range.index(options.set_temp)
-            except ValueError:
-                # Fallback or clamp if temp not found exactly? 
-                # For now let's assume valid input or clamp to nearest.
-                # If exact match fails, we might need a smarter lookup, but standard UI usually sends valid steps.
-                temp_index = min(range(len(self.temperature_range)), key=lambda i: abs(self.temperature_range[i] - options.set_temp))
-
-            hex_set_temp = get_index_into_hex_temp(temp_index)
-            # Adjust index logic if needed, but using existing util for now.
-            # CA uses get_index_into_hex_temp(self.temperature_range_c_new.index(options.set_temp))
-            # EU uses self.temperature_range = [x * 0.5 for x in range(28, 60)]
-            # We will stick to EU temperature range logic unless proven otherwise.
-
-            climate_settings = {
-                "airCtrl": int(options.climate),
-                "defrost": options.defrost,
-                "heating1": options.heating,
-                "airTemp": {
-                    "value": hex_set_temp,
-                    "unit": 0,
-                    "hvacTempType": 1,
-                },
-            }
-            
+            # Use standard CCS2 payload format (like base class)
+            # instead of CA-style remoteControl payload
             payload = {
-                "remoteControl": climate_settings,
-                "pin": token.pin,
+                "command": "start",
+                "ignitionDuration": options.duration,
+                "strgWhlHeating": options.steering_wheel,
+                "hvacTempType": 1,
+                "hvacTemp": options.set_temp,
+                "sideRearMirrorHeating": 1,
+                "drvSeatLoc": "R",
+                "seatClimateInfo": {
+                    "drvSeatClimateState": options.front_left_seat,
+                    "psgSeatClimateState": options.front_right_seat,
+                    "rrSeatClimateState": options.rear_right_seat,
+                    "rlSeatClimateState": options.rear_left_seat,
+                },
+                "tempUnit": "C",
+                "windshieldFrontDefogState": options.defrost,
             }
-            payload["remoteControl"].update(
-                {
-                    "igniOnDuration": options.duration,
-                    "seatHeaterVentCMD": {
-                        "drvSeatOptCmd": options.front_left_seat,
-                        "astSeatOptCmd": options.front_right_seat,
-                        "rlSeatOptCmd": options.rear_left_seat,
-                        "rrSeatOptCmd": options.rear_right_seat,
-                    },
-                }
-            )
 
-            # Try using standard control headers which include the control token
-            # The original bypass was because _get_control_token supposedly failed for these cars,
-            # but let's try it anyway to get a proper error message.
-            headers = self._get_control_headers(token, vehicle)
+            # Use authenticated headers (bypassing control token which fails for EV9)
+            headers = self._get_authenticated_headers(
+                token, vehicle.ccu_ccs2_protocol_support
+            )
             headers["vehicleId"] = vehicle.id
             
             _LOGGER.debug(f"{DOMAIN} - Start Climate Action Request (EV9/IONIQ9): {payload}")
